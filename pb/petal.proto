@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option go_package = "github.com/uemuramikio/petal/pb";
+
+package petal;
+
+service Generator {
+    rpc Generate (Request) returns (Reply) {}
+}
+
+message Request {}
+
+message Reply {
+    uint64 id = 1;
+}
