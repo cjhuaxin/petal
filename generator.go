@@ -9,6 +9,7 @@ package petal
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 )
@@ -39,9 +40,9 @@ const (
 	SequenceBits      = 12
 	TimestampShift    = SequenceBits + WorkerIDBits + DatacenterIDBits
 	DatacenterIdShift = SequenceBits + WorkerIDBits
-	maxWorkerID       = 1<<WorkerIDBits - 1
-	maxDatacenterID   = 1<<DatacenterIDBits - 1
-	sequenceMask      = 1<<SequenceBits - 1
+	MaxWorkerID       = 1<<WorkerIDBits - 1
+	MaxDatacenterID   = 1<<DatacenterIDBits - 1
+	SequenceMask      = 1<<SequenceBits - 1
 )
 
 var newGeneratorLock sync.Mutex
@@ -52,14 +53,16 @@ const TimeUnit = int64(time.Millisecond)
 var (
 	ErrInvalidDatacenterID = errors.New("invalid datacenter id")
 	ErrInvalidWorkerID     = errors.New("invalid worker id")
+	ErrDuplicationWorkerID = errors.New("duplication worker id")
+	ErrOverflowWorkerID    = errors.New("no more workerId available in the datacenter")
 )
 
 func checkMachineID(datacenterID, workerID uint) error {
-	if datacenterID > maxDatacenterID {
+	if datacenterID > MaxDatacenterID {
 		return ErrInvalidDatacenterID
 	}
 
-	if workerID > maxWorkerID {
+	if workerID > MaxWorkerID {
 		return ErrInvalidWorkerID
 	}
 
@@ -83,18 +86,37 @@ type generator struct {
 }
 
 // NewGenerator returns new generator.
-func NewGenerator(datacenterID, workerID uint) (Generator, error) {
+func NewGenerator(option *Option) (Generator, error) {
 	// To keep machine ID be unique.
 	newGeneratorLock.Lock()
 	defer newGeneratorLock.Unlock()
 
-	if err := checkMachineID(datacenterID, workerID); err != nil {
+	if err := checkMachineID(option.DatacenterID, option.WorkerID); err != nil {
+		return nil, err
+	}
+	ip, err := getIp()
+	if err != nil {
+		return nil, err
+	}
+	holder := EtcdHolder{
+		Ip:           ip,
+		Port:         option.ServerPort,
+		DatacenterID: option.DatacenterID,
+		WorkerID:     option.WorkerID,
+		EtcdOption:   option.EtcdOption,
+	}
+	err = holder.Init()
+	if err != nil {
+		return nil, err
+	}
+	workerId, err := holder.GetWorkerID()
+	if err != nil {
 		return nil, err
 	}
 
 	return &generator{
-		datacenterID: datacenterID,
-		workerID:     workerID,
+		datacenterID: option.DatacenterID,
+		workerID:     workerId,
 		startedAt:    ToPetalTime(Epoch),
 		lock:         new(sync.Mutex),
 	}, nil
@@ -121,7 +143,7 @@ func (g *generator) NextID() (uint64, error) {
 	}
 
 	if current == g.lastTimestamp {
-		g.sequence = (g.sequence + 1) & sequenceMask
+		g.sequence = (g.sequence + 1) & SequenceMask
 		if g.sequence == 0 {
 			// overflow
 			current = g.waitUntilNextTick(current)
@@ -138,10 +160,12 @@ func (g *generator) NextID() (uint64, error) {
 		uint64(g.sequence), nil
 }
 
+// currentElapsedTime returns the time elapsed from Epoch to now().
 func (g *generator) currentElapsedTime() int64 {
 	return ToPetalTime(now()) - g.startedAt
 }
 
+// waitUntilNextTick wait next tick
 func (g *generator) waitUntilNextTick(ts int64) int64 {
 	next := g.currentElapsedTime()
 
@@ -153,6 +177,23 @@ func (g *generator) waitUntilNextTick(ts int64) int64 {
 	return next
 }
 
+// ToPetalTime convert time.Time to PetalTime(time.Millisecond)
 func ToPetalTime(t time.Time) int64 {
 	return t.UnixNano() / TimeUnit
+}
+
+// getIp return the first interface address
+func getIp() (string, error) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return "", err
+	}
+
+	for _, addr := range addrs {
+		if ip, ok := addr.(*net.IPNet); ok && !ip.IP.IsLoopback() {
+			return ip.IP.String(), nil
+		}
+	}
+
+	return "", fmt.Errorf("can not find the client ip address")
 }

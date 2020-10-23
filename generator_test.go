@@ -17,23 +17,59 @@ func getNextMachineID() (uint, uint) {
 }
 
 func TestInvalidMachineID(t *testing.T) {
-	_, err := NewGenerator(31, 31)
+	_, err := NewGenerator(&Option{
+		DatacenterID: 31,
+		WorkerID:     31,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	assert.Nil(t, err, "unexpected error")
 
-	_, err = NewGenerator(32, 31)
+	_, err = NewGenerator(&Option{
+		DatacenterID: 32,
+		WorkerID:     31,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	assert.Equal(t, err, ErrInvalidDatacenterID, "invalid error for overranged datacenterID")
 
-	_, err = NewGenerator(31, 32)
+	_, err = NewGenerator(&Option{
+		DatacenterID: 31,
+		WorkerID:     32,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	assert.Equal(t, err, ErrInvalidWorkerID, "invalid error for overranged workerID")
 }
 
 func TestUniqueMachineID(t *testing.T) {
 	datacenterID, workerID := getNextMachineID()
 
-	_, err := NewGenerator(datacenterID, workerID)
+	_, err := NewGenerator(&Option{
+		DatacenterID: datacenterID,
+		WorkerID:     workerID,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	assert.Nil(t, err, "failed to create first generator")
 
-	_, err = NewGenerator(getNextMachineID())
+	datacenterID, workerID = getNextMachineID()
+	_, err = NewGenerator(&Option{
+		DatacenterID: datacenterID,
+		WorkerID:     workerID,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	assert.Nil(t, err, "failed to create second generator")
 
 	// duplicate!!
@@ -43,7 +79,14 @@ func TestUniqueMachineID(t *testing.T) {
 
 func TestGenerateAnID(t *testing.T) {
 	datacenterID, workerID := getNextMachineID()
-	g, err := NewGenerator(datacenterID, workerID)
+	g, err := NewGenerator(&Option{
+		DatacenterID: datacenterID,
+		WorkerID:     workerID,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	assert.Nil(t, err, "failed to create new generator")
 
 	var id uint64
@@ -81,7 +124,15 @@ func TestGenerateAnID(t *testing.T) {
 }
 
 func TestGenerateSomeIDs(t *testing.T) {
-	g, _ := NewGenerator(getNextMachineID())
+	datacenterID, workerID := getNextMachineID()
+	g, _ := NewGenerator(&Option{
+		DatacenterID: datacenterID,
+		WorkerID:     workerID,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	var ids []uint64
 
 	for i := 0; i < 1000; i++ {
@@ -101,7 +152,15 @@ func TestGenerateSomeIDs(t *testing.T) {
 }
 
 func TestClockRollback(t *testing.T) {
-	g, _ := NewGenerator(getNextMachineID())
+	datacenterID, workerID := getNextMachineID()
+	g, _ := NewGenerator(&Option{
+		DatacenterID: datacenterID,
+		WorkerID:     workerID,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	_, err := g.NextID()
 	if err != nil {
 		t.Fatalf("failed to generate id: %s", err)
@@ -116,7 +175,15 @@ func TestClockRollback(t *testing.T) {
 }
 
 func BenchmarkGenerateID(b *testing.B) {
-	g, _ := NewGenerator(getNextMachineID())
+	datacenterID, workerID := getNextMachineID()
+	g, _ := NewGenerator(&Option{
+		DatacenterID: datacenterID,
+		WorkerID:     workerID,
+		EtcdOption: &EtcdOption{
+			Endpoints: DefaultEndpoints,
+			Timeout:   DefaultTimeout,
+		},
+	})
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {

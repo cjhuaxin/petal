@@ -12,22 +12,31 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 type petalConfig struct {
-	datacenterID uint
-	workerID     uint
-	port         int
-	logLevel     string
+	datacenterID  uint
+	workerID      uint
+	port          int
+	logLevel      string
+	etcdEndpoints []string
+	etcdTimeout   time.Duration
+	etcdUsername  string
+	etcdPassword  string
 }
 
 const (
-	version         = "0.0.1"
-	datacenterIDKey = "datacenter-id"
-	workerIDKey     = "worker-id"
-	portKey         = "port"
-	logLevelKey     = "log-level"
-	runCommand      = "run"
+	version          = "0.0.1"
+	datacenterIDKey  = "datacenter-id"
+	workerIDKey      = "worker-id"
+	portKey          = "port"
+	logLevelKey      = "log-level"
+	etcdEndpointsKey = "etcd-endpoints"
+	etcdTimeoutKey   = "etcd-timeout"
+	etcdUsernameKey  = "etcd-username"
+	etcdPasswordKey  = "etcd-passowrd"
+	runCommand       = "run"
 )
 
 func main() {
@@ -38,6 +47,7 @@ func main() {
 			fmt.Println(err)
 			return cli.Exit("set log level failed", 1)
 		}
+		pc.etcdEndpoints = c.StringSlice(etcdEndpointsKey)
 
 		var wg sync.WaitGroup
 		ctx, cancel := context.WithCancel(context.Background())
@@ -82,9 +92,16 @@ func serverServe(ctx context.Context, wg *sync.WaitGroup, fn petal.ServeFunc) {
 }
 
 func newPetalApp(peco *petalConfig) (*petal.App, string, error) {
-	app, err := petal.NewApp(petal.Option{
+	app, err := petal.NewApp(&petal.Option{
 		DatacenterID: peco.datacenterID,
 		WorkerID:     peco.workerID,
+		ServerPort:   peco.port,
+		EtcdOption: &petal.EtcdOption{
+			Endpoints: peco.etcdEndpoints,
+			Timeout:   peco.etcdTimeout,
+			Username:  peco.etcdPassword,
+			Password:  peco.etcdPassword,
+		},
 	})
 	if err != nil {
 		return nil, "", err
@@ -132,6 +149,20 @@ func initApp(config *petalConfig) *cli.App {
 						Destination: &config.logLevel,
 						EnvVars:     convertFlagKeyToEnvKey(logLevelKey),
 					},
+					&cli.StringFlag{
+						Name:        etcdUsernameKey,
+						Usage:       "username for connecting etcd",
+						Value:       "",
+						Destination: &config.etcdUsername,
+						EnvVars:     convertFlagKeyToEnvKey(etcdUsernameKey),
+					},
+					&cli.StringFlag{
+						Name:        etcdPasswordKey,
+						Usage:       "password for connecting etcd",
+						Value:       "",
+						Destination: &config.etcdPassword,
+						EnvVars:     convertFlagKeyToEnvKey(etcdPasswordKey),
+					},
 					&cli.IntFlag{
 						Name:        portKey,
 						Usage:       "port to listen",
@@ -152,6 +183,19 @@ func initApp(config *petalConfig) *cli.App {
 						Value:       0,
 						Destination: &config.workerID,
 						EnvVars:     convertFlagKeyToEnvKey(workerIDKey),
+					},
+					&cli.StringSliceFlag{
+						Name:    etcdEndpointsKey,
+						Usage:   "the endpoints for connecting etcd",
+						Value:   cli.NewStringSlice("localhost:2379"),
+						EnvVars: convertFlagKeyToEnvKey(etcdEndpointsKey),
+					},
+					&cli.DurationFlag{
+						Name:        etcdTimeoutKey,
+						Usage:       "etcd operation timeout(s)",
+						Value:       5 * time.Second,
+						Destination: &config.etcdTimeout,
+						EnvVars:     convertFlagKeyToEnvKey(etcdTimeoutKey),
 					},
 				},
 			},

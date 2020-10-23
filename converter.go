@@ -20,8 +20,8 @@ func ToID(t time.Time) uint64 {
 
 // Dump returns the structure of id.
 func Dump(id uint64) (t time.Time, datacenterID, workerID uint64, sequence uint64) {
-	datacenterID = (id & (maxDatacenterID << DatacenterIdShift)) >> DatacenterIdShift
-	workerID = (id & (maxWorkerID << SequenceBits)) >> SequenceBits
-	sequence = id & sequenceMask
+	datacenterID = (id & (MaxDatacenterID << DatacenterIdShift)) >> DatacenterIdShift
+	workerID = (id & (MaxWorkerID << SequenceBits)) >> SequenceBits
+	sequence = id & SequenceMask
 	return ToTime(id), datacenterID, workerID, sequence
 }

@@ -30,11 +30,21 @@ type App struct {
 type Option struct {
 	DatacenterID uint
 	WorkerID     uint
+	ServerPort   int
+	*EtcdOption
+}
+
+// EtcdOption represents a Etcd optional parameters.
+type EtcdOption struct {
+	Endpoints []string
+	Timeout   time.Duration
+	Username  string
+	Password  string
 }
 
 // NewApp create and returns new App instance.
-func NewApp(opt Option) (*App, error) {
-	gen, err := NewGenerator(opt.DatacenterID, opt.WorkerID)
+func NewApp(opt *Option) (*App, error) {
+	gen, err := NewGenerator(opt)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +126,6 @@ func (app *App) Serve(ctx context.Context) error {
 
 // server is used to implement petal.GeneratorServer
 type server struct {
-	pb.UnimplementedGeneratorServer
 	gen Generator
 }
 
