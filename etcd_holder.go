@@ -40,7 +40,7 @@ func (holder *EtcdHolder) Init() error {
 }
 
 // GetWorkerID from etcd
-// if the workerID is zero,then generate a unique workerID in the datacenterID range
+// If the workerID is zero,then generate a unique workerID in the datacenterID range
 // If the workerID is greater than 0, then register a workerID on Etcd
 func (holder *EtcdHolder) GetWorkerID() (uint, error) {
 	ctx, cancel := context.WithTimeout(context.TODO(), holder.Timeout)
