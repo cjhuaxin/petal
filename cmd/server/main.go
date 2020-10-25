@@ -35,7 +35,7 @@ const (
 	etcdEndpointsKey = "etcd-endpoints"
 	etcdTimeoutKey   = "etcd-timeout"
 	etcdUsernameKey  = "etcd-username"
-	etcdPasswordKey  = "etcd-passowrd"
+	etcdPasswordKey  = "etcd-password"
 	runCommand       = "run"
 )
 
