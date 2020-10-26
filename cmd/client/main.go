@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"github.com/uemuramikio/petal"
 	"github.com/uemuramikio/petal/pb"
 	"github.com/urfave/cli/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
-	"log"
 	"os"
 	"sort"
 	"time"
@@ -27,12 +26,13 @@ func main() {
 		// Set up a connection to the server.
 		conn, err := grpc.Dial(c.String(endpointKey), grpc.WithInsecure())
 		if err != nil {
-			log.Fatalf("did not connect: %v", err)
+			petal.Log.Errorf("did not connect: %v", err)
 		}
 		defer conn.Close()
 		client := pb.NewGeneratorClient(conn)
 
-		fmt.Printf("start generate id\n")
+		petal.Log.Info("start generate id")
+		start := time.Now()
 		count := c.Int(countKey)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(count)*time.Second)
 		for i := 0; i < count; i++ {
@@ -41,21 +41,22 @@ func main() {
 			r, err := client.Generate(ctx, &pb.Request{})
 			if err != nil {
 				errStatus, _ := status.FromError(err)
-				fmt.Println(errStatus.Message())
-				fmt.Println(errStatus.Code())
-				log.Fatalf("could not generate: %v", err)
+				petal.Log.Errorf("could not generate[errorStatus=%s,errorMsg=%s]: %v", errStatus.Code(), errStatus.Message(), err)
+				count = i
+				break
 			}
-			fmt.Printf("ID %d : %d\n", i, r.GetId())
+			petal.Log.Infof("ID %d : %d", i, r.GetId())
 		}
 		cancel()
-		fmt.Printf("finish generate id,total : %d\nexit now.\n", count)
+		petal.Log.Debugf("time taken to generate [%d] ids is: %d ms", count, time.Since(start)/time.Millisecond)
+		petal.Log.Infof("finish generate id,desired number of ids is: %d ,the actual number is: %d", c.Int(countKey), count)
 
 		return nil
 	}
 
 	err := app.Run(os.Args)
 	if err != nil {
-		log.Fatalf("start app failed: %v", err)
+		petal.Log.Errorf("start app failed: %v", err)
 	}
 }
 

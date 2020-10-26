@@ -44,7 +44,7 @@ func main() {
 	cliApp := initApp(pc)
 	cliApp.Command(runCommand).Action = func(c *cli.Context) error {
 		if err := petal.SetLogLevel(pc.logLevel); err != nil {
-			fmt.Println(err)
+			petal.Log.Error(err)
 			return cli.Exit("set log level failed", 1)
 		}
 		pc.etcdEndpoints = c.StringSlice(etcdEndpointsKey)
@@ -55,7 +55,7 @@ func main() {
 		// main listener
 		app, addr, err := newPetalApp(pc)
 		if err != nil {
-			fmt.Println(err)
+			petal.Log.Error(err)
 			return cli.Exit("new petal app failed", 1)
 		}
 

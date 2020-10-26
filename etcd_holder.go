@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go.etcd.io/etcd/clientv3"
+	"google.golang.org/grpc"
 	"hash/fnv"
 	"os"
 	"time"
@@ -21,8 +22,9 @@ type EtcdHolder struct {
 }
 
 const (
-	prefixEtcdPath = "/petal"
-	leaseTTL       = 5
+	prefixEtcdPath  = "/petal"
+	leaseTTL        = 5
+	leaseRetryTimes = 5
 )
 
 // Init a etcd client
@@ -30,10 +32,14 @@ func (holder *EtcdHolder) Init() error {
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   holder.Endpoints,
 		DialTimeout: holder.Timeout,
+		DialOptions: []grpc.DialOption{
+			grpc.WithBlock(),
+		},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("init etcd clientv3 failed[EtcdOption: %+v],err=%s", *holder.EtcdOption, err.Error())
 	}
+
 	holder.Client = client
 
 	return nil
@@ -147,15 +153,29 @@ func (holder *EtcdHolder) keepAlive(leaseResp *clientv3.LeaseGrantResponse) {
 	}
 
 	go func() {
+		failedCount := 0
+		sleepTime := (leaseTTL - 1) * time.Second
 		for {
 			select {
 			case leaseKeepResp := <-leaseRespChan:
 				if leaseKeepResp != nil {
+					if failedCount != 0 {
+						failedCount = 0
+					}
 					Log.Debug("lease success")
-					time.Sleep(leaseTTL*time.Second - 1*time.Second)
+					time.Sleep(sleepTime)
 					continue
 				}
-				return
+				if failedCount < leaseRetryTimes {
+					failedCount++
+					Log.Warnf("lease failed,failedCount=%d", failedCount)
+					if failedCount < leaseRetryTimes {
+						time.Sleep(sleepTime)
+						continue
+					}
+				}
+				Log.Errorf("All attempts to renew the lease have failed[retryTimes=%d],exit now", leaseRetryTimes)
+				os.Exit(1)
 			}
 		}
 	}()
