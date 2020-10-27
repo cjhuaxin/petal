@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.etcd.io/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
+	etcdnaming "go.etcd.io/etcd/clientv3/naming"
+	"go.etcd.io/etcd/proxy/grpcproxy"
 	"google.golang.org/grpc"
 	"hash/fnv"
 	"os"
@@ -22,9 +24,10 @@ type EtcdHolder struct {
 }
 
 const (
-	prefixEtcdPath  = "/petal"
-	leaseTTL        = 5
-	leaseRetryTimes = 5
+	etcdWorkerIdPrefix = "/petal/worker"
+	etcdServicePrefix  = "/petal/service"
+	leaseTTL           = 5
+	leaseRetryTimes    = 5
 )
 
 // Init a etcd client
@@ -39,7 +42,6 @@ func (holder *EtcdHolder) Init() error {
 	if err != nil {
 		return fmt.Errorf("init etcd clientv3 failed[EtcdOption: %+v],err=%s", *holder.EtcdOption, err.Error())
 	}
-
 	holder.Client = client
 
 	return nil
@@ -49,7 +51,7 @@ func (holder *EtcdHolder) Init() error {
 // If the workerID is zero,then generate a unique workerID in the datacenterID range
 // If the workerID is greater than 0, then register a workerID on Etcd
 func (holder *EtcdHolder) GetWorkerID() (uint, error) {
-	ctx, cancel := context.WithTimeout(context.TODO(), holder.Timeout)
+	ctx, cancel := context.WithCancel(context.TODO())
 	defer cancel()
 
 	if holder.WorkerID == 0 {
@@ -63,7 +65,7 @@ func (holder *EtcdHolder) GetWorkerID() (uint, error) {
 			return 0, err
 		}
 
-		key := buildEtcdKey(holder.DatacenterID, holder.WorkerID)
+		key := buildEtcdWorkerKey(holder.DatacenterID, holder.WorkerID)
 		value := string(holderBytes)
 		err = holder.PutNx(ctx, key, value)
 		if err != nil {
@@ -95,7 +97,7 @@ func (holder *EtcdHolder) generateWorkerId(ctx context.Context) error {
 			return ErrOverflowWorkerID
 		}
 		workerID := (keyHash + count) & MaxWorkerID
-		key := buildEtcdKey(holder.DatacenterID, uint(workerID))
+		key := buildEtcdWorkerKey(holder.DatacenterID, uint(workerID))
 
 		err := holder.PutNx(ctx, key, string(holderBytes))
 		if err == ErrDuplicationWorkerID {
@@ -130,7 +132,7 @@ func (holder *EtcdHolder) PutNx(ctx context.Context, key, value string) error {
 		return ErrDuplicationWorkerID
 	}
 
-	holder.keepAlive(leaseResp)
+	holder.keepAlive(key, leaseResp)
 
 	return nil
 }
@@ -145,7 +147,19 @@ func (holder *EtcdHolder) Delete(ctx context.Context, key string, opts ...client
 	return nil
 }
 
-func (holder *EtcdHolder) keepAlive(leaseResp *clientv3.LeaseGrantResponse) {
+func (holder *EtcdHolder) GetGrpcConnection() (*grpc.ClientConn, error) {
+	resolver := &etcdnaming.GRPCResolver{Client: holder.Client}
+	roundRobin := grpc.RoundRobin(resolver)
+	return grpc.Dial(etcdServicePrefix, grpc.WithBalancer(roundRobin), grpc.WithBlock(), grpc.WithInsecure())
+}
+
+func (holder *EtcdHolder) RegisterServer() {
+	addr := fmt.Sprintf("%s:%d", holder.Ip, holder.Port)
+	grpcproxy.Register(holder.Client, etcdServicePrefix, addr, leaseTTL)
+}
+
+//keepAlive keeps the given lease alive forever.
+func (holder *EtcdHolder) keepAlive(key string, leaseResp *clientv3.LeaseGrantResponse) {
 	leaseRespChan, err := holder.Client.KeepAlive(context.TODO(), leaseResp.ID)
 	if err != nil {
 		Log.Errorf("lease keep alive failed,err=%v\nexit server now\n", err)
@@ -162,7 +176,7 @@ func (holder *EtcdHolder) keepAlive(leaseResp *clientv3.LeaseGrantResponse) {
 					if failedCount != 0 {
 						failedCount = 0
 					}
-					Log.Debug("lease success")
+					Log.Debugf("lease success[key=%s]", key)
 					time.Sleep(sleepTime)
 					continue
 				}
@@ -182,6 +196,6 @@ func (holder *EtcdHolder) keepAlive(leaseResp *clientv3.LeaseGrantResponse) {
 }
 
 // key format: prefix/datacenterID/workerID
-func buildEtcdKey(datacenterId, workerId uint) string {
-	return fmt.Sprintf("%s/%d/%d", prefixEtcdPath, datacenterId, workerId)
+func buildEtcdWorkerKey(datacenterId, workerId uint) string {
+	return fmt.Sprintf("%s/%d/%d", etcdWorkerIdPrefix, datacenterId, workerId)
 }

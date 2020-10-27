@@ -5,7 +5,6 @@ import (
 	"github.com/uemuramikio/petal"
 	"github.com/uemuramikio/petal/pb"
 	"github.com/urfave/cli/v2"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"os"
 	"sort"
@@ -13,20 +12,52 @@ import (
 )
 
 const (
-	version     = "0.0.1"
-	endpointKey = "endpoint"
-	countKey    = "count"
-	runCommand  = "run"
+	version          = "0.0.1"
+	etcdEndpointsKey = "etcd-endpoints"
+	etcdTimeoutKey   = "etcd-timeout"
+	etcdUsernameKey  = "etcd-username"
+	etcdPasswordKey  = "etcd-password"
+	logLevelKey      = "log-level"
+	countKey         = "count"
+	runCommand       = "run"
 )
 
+type petalConfig struct {
+	logLevel      string
+	etcdEndpoints []string
+	etcdTimeout   time.Duration
+	etcdUsername  string
+	etcdPassword  string
+}
+
 func main() {
+	pc := &petalConfig{}
 	// init app
-	app := initApp()
+	app := initApp(pc)
 	app.Command(runCommand).Action = func(c *cli.Context) error {
+		if err := petal.SetLogLevel(pc.logLevel); err != nil {
+			petal.Log.Error(err)
+			return cli.Exit("set log level failed", 1)
+		}
+		pc.etcdEndpoints = c.StringSlice(etcdEndpointsKey)
 		// Set up a connection to the server.
-		conn, err := grpc.Dial(c.String(endpointKey), grpc.WithInsecure())
+		holder := petal.EtcdHolder{
+			EtcdOption: &petal.EtcdOption{
+				Endpoints: pc.etcdEndpoints,
+				Timeout:   pc.etcdTimeout,
+				Username:  pc.etcdUsername,
+				Password:  pc.etcdPassword,
+			},
+		}
+		err := holder.Init()
 		if err != nil {
-			petal.Log.Errorf("did not connect: %v", err)
+			petal.Log.Errorf("init etcd holder failed, err=%v", err)
+			os.Exit(1)
+		}
+		conn, err := holder.GetGrpcConnection()
+		if err != nil {
+			petal.Log.Errorf("get grpc connection failed, err=%v", err)
+			os.Exit(1)
 		}
 		defer conn.Close()
 		client := pb.NewGeneratorClient(conn)
@@ -60,7 +91,7 @@ func main() {
 	}
 }
 
-func initApp() *cli.App {
+func initApp(config *petalConfig) *cli.App {
 	app := &cli.App{
 		Name:                 "petal client",
 		Usage:                "connect to petal server and generate unique id",
@@ -74,9 +105,33 @@ func initApp() *cli.App {
 				Usage:   "start the petal client",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
-						Name:  endpointKey,
-						Usage: "endpoint for petal server,host:port format",
-						Value: "localhost:50051",
+						Name:        logLevelKey,
+						Usage:       "log level (panic, fatal, error, warn, info)",
+						Value:       "debug",
+						Destination: &config.logLevel,
+					},
+					&cli.StringFlag{
+						Name:        etcdUsernameKey,
+						Usage:       "username for connecting etcd",
+						Value:       "",
+						Destination: &config.etcdUsername,
+					},
+					&cli.StringFlag{
+						Name:        etcdPasswordKey,
+						Usage:       "password for connecting etcd",
+						Value:       "",
+						Destination: &config.etcdPassword,
+					},
+					&cli.StringSliceFlag{
+						Name:  etcdEndpointsKey,
+						Usage: "the endpoints for connecting etcd",
+						Value: cli.NewStringSlice("localhost:2379"),
+					},
+					&cli.DurationFlag{
+						Name:        etcdTimeoutKey,
+						Usage:       "etcd operation timeout(s)",
+						Value:       5 * time.Second,
+						Destination: &config.etcdTimeout,
 					},
 					&cli.IntFlag{
 						Name:  countKey,

@@ -109,6 +109,7 @@ func NewGenerator(option *Option) (Generator, error) {
 	if err != nil {
 		return nil, err
 	}
+	holder.RegisterServer()
 	workerId, err := holder.GetWorkerID()
 	if err != nil {
 		return nil, err
@@ -191,7 +192,9 @@ func getIp() (string, error) {
 
 	for _, addr := range addrs {
 		if ip, ok := addr.(*net.IPNet); ok && !ip.IP.IsLoopback() {
-			return ip.IP.String(), nil
+			if ip.IP.To4() != nil {
+				return ip.IP.String(), nil
+			}
 		}
 	}
 

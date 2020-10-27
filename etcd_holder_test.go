@@ -3,8 +3,8 @@ package petal
 import (
 	"context"
 	"fmt"
+	"github.com/coreos/etcd/clientv3"
 	"github.com/stretchr/testify/assert"
-	"go.etcd.io/etcd/clientv3"
 	"testing"
 	"time"
 )
@@ -30,7 +30,7 @@ func TestInit(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, uint(1), workerID)
 	Log.Infof("workerID is : %d", workerID)
-	err = holder.Delete(context.TODO(), buildEtcdKey(holder.DatacenterID, workerID))
+	err = holder.Delete(context.TODO(), buildEtcdWorkerKey(holder.DatacenterID, workerID))
 	assert.Nil(t, err)
 }
 
@@ -52,7 +52,7 @@ func TestDuplicatedInit(t *testing.T) {
 	// Repeated calls to the init method
 	_, err = holder.GetWorkerID()
 	assert.Equal(t, err, ErrDuplicationWorkerID)
-	err = holder.Delete(context.TODO(), buildEtcdKey(holder.DatacenterID, holder.WorkerID))
+	err = holder.Delete(context.TODO(), buildEtcdWorkerKey(holder.DatacenterID, holder.WorkerID))
 	assert.Nil(t, err)
 }
 
@@ -71,7 +71,7 @@ func TestGenerateWorkerID(t *testing.T) {
 	assert.Nil(t, err)
 	workerID, err := holder.GetWorkerID()
 	Log.Infof("workerID is : %d", workerID)
-	err = holder.Delete(context.TODO(), buildEtcdKey(holder.DatacenterID, workerID))
+	err = holder.Delete(context.TODO(), buildEtcdWorkerKey(holder.DatacenterID, workerID))
 	assert.Nil(t, err)
 }
 
@@ -96,9 +96,9 @@ func TestGenerateDuplicatedWorkerID(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, workerID != workerID1)
 	Log.Infof("the second workerID is : %d", workerID1)
-	err = holder.Delete(context.TODO(), buildEtcdKey(holder.DatacenterID, workerID))
+	err = holder.Delete(context.TODO(), buildEtcdWorkerKey(holder.DatacenterID, workerID))
 	assert.Nil(t, err)
-	err = holder.Delete(context.TODO(), buildEtcdKey(holder.DatacenterID, workerID1))
+	err = holder.Delete(context.TODO(), buildEtcdWorkerKey(holder.DatacenterID, workerID1))
 	assert.Nil(t, err)
 }
 
@@ -128,7 +128,7 @@ func TestWorkerIDOverflow(t *testing.T) {
 	_, err = holder.GetWorkerID()
 	assert.Equal(t, err, ErrOverflowWorkerID)
 
-	withRange := clientv3.WithRange(fmt.Sprintf("%s/%d/%s", prefixEtcdPath, datacenterID, "\\0"))
-	err = holder.Delete(context.TODO(), buildEtcdKey(datacenterID, 0), withRange)
+	withRange := clientv3.WithRange(fmt.Sprintf("%s/%d/%s", etcdWorkerIdPrefix, datacenterID, "\\0"))
+	err = holder.Delete(context.TODO(), buildEtcdWorkerKey(datacenterID, 0), withRange)
 	assert.Nil(t, err)
 }
